@@ -1,10 +1,10 @@
 # RFM ANALYSIS FOR LIQUOR ----
 
-# DATA SOURCE: https://www.kaggle.com/residentmario/iowa-liquor-sales
+# Data Source: https://www.kaggle.com/residentmario/iowa-liquor-sales
 
 # screenshot_path <- "../LucasO-Blogdown/content/project/RFM-Analysis-For-Liquor-Sales/Screenshots/"
 
-# Setup ----
+# Setup ------------------------------------------------------------------------
 
 # * Libraries ----
 library(tidyverse)
@@ -26,7 +26,8 @@ min(liquor_tbl_raw$date)
 
 max(liquor_tbl_raw$date)
 
-# Prepare Data For Analysis ----
+
+# Prepare Data For Analysis ----------------------------------------------------
 liquor_tbl <- liquor_tbl_raw %>% 
     
     # Filter for most recent year
@@ -42,10 +43,8 @@ liquor_tbl <- liquor_tbl_raw %>%
 
 liquor_tbl %>% glimpse()
 
-# liquor_tbl %>% write_rds("../LucasO-Blogdown/content/project/RFM-Analysis-For-Liquor-Sales/Data/data.rds")
 
-
-# Volume (Gallon) Sold By Vendor ----
+# * Volume (Gallon) Sold By Vendor ----
 liquor_tbl %>% 
     group_by(vendor_name) %>% 
     summarise(volume_sold_gallons = sum(volume_sold_gallons)) %>% 
@@ -53,20 +52,32 @@ liquor_tbl %>%
     arrange(desc(volume_sold_gallons))
 
 liquor_tbl %>% 
-    filter(vendor_name == "DIAGEO AMERICAS") 
+    filter(vendor_name == "DIAGEO AMERICAS") %>% 
+    distinct(store_number, store_name)
 
+# * Filter For Top Selling Vendor ----
 diageo_tbl <- liquor_tbl %>% 
-    filter(vendor_name == "DIAGEO AMERICAS")
+    filter(vendor_name == "DIAGEO AMERICAS") %>% 
+    mutate(store = paste(store_number, store_name, sep = "-")) %>% 
+    select(-c(store_number, store_name)) %>% 
+    select(invoice_item_number, date, store, everything(.))
 
 diageo_tbl
 
+# * Vendor Stats ----
+diageo_tbl %>% 
+    summarise(volume_sold_gallons = sum(volume_sold_gallons),
+              sale_dollars = sum(sale_dollars),
+              no_of_stores = n_distinct(store),
+              no_of_items = n_distinct(item_description))
 
-ScSc# RFM Analysis ----
+
+# RFM Analysis -----------------------------------------------------------------
 
 # * RFM Table ----
 rfm_tbl <- rfm_table_order(
     data          = diageo_tbl, 
-    customer_id   = store_name, 
+    customer_id   = store, 
     order_date    = date,
     revenue       = sale_dollars,
     analysis_date = as.Date("2017-10-31")
@@ -99,6 +110,8 @@ rfm_segment_tbl <- rfm_segment(
     
 )
 
+# * Analysing Segments ----
+
 segment_count <- rfm_segment_tbl %>%
     count(segment) %>% 
     mutate(pct = n/sum(n)) %>% 
@@ -113,11 +126,10 @@ segment_count_plot <- segment_count %>%
     theme_tq()+
     labs(title = "Customer Segments", y = NULL, x = NULL) 
 
-segment_count_plot %>% 
-    write_rds(paste0(screenshot_path,"segment_prop.rds"))
+# segment_count_plot %>% write_rds(paste0(screenshot_path,"segment_prop.rds"))
     
 
-# * Plotting Function ----
+# Plotting Function ----
 func_rfm_segment_plot <- function(data, stat, rfm_var, accuracy, fct_rev = FALSE){
     
     rfm_var_expr <- rlang::enquo(rfm_var)
@@ -173,7 +185,7 @@ recency_plot <- func_rfm_segment_plot(
 )+
     labs(title = "Median Recency by Segment", y = NULL, x = "number of days")
 
-recency_plot %>% write_rds(paste0(screenshot_path,"recency_plot.rds"))
+# recency_plot %>% write_rds(paste0(screenshot_path,"recency_plot.rds"))
 
 # Plot of Median Frequency Value
 frequency_plot <- func_rfm_segment_plot(
@@ -185,7 +197,7 @@ frequency_plot <- func_rfm_segment_plot(
 )+
     labs(title = "Median Frequency by Segment", y = NULL, x = "number of transactions")
 
-frequency_plot %>% write_rds(paste0(screenshot_path,"frequency_plot.rds"))
+# frequency_plot %>% write_rds(paste0(screenshot_path,"frequency_plot.rds"))
 
 # Plot of Median Monetary Value
 monetary_plot <- func_rfm_segment_plot(
@@ -198,7 +210,7 @@ monetary_plot <- func_rfm_segment_plot(
     scale_x_continuous(labels = scales::dollar_format())+
     labs(title = "Median Monetary Value by Segment", y = NULL, x = "Amount Spent")
 
-monetary_plot %>% write_rds(paste0(screenshot_path,"monetary_plot.rds"))
+# monetary_plot %>% write_rds(paste0(screenshot_path,"monetary_plot.rds"))
 
 # Histogram of RFM Values
 rfm_histogram <- rfm_histograms(
@@ -214,18 +226,20 @@ recency_vs_monetary_plot <- rfm_rm_plot(
     rfm_table = rfm_tbl,
     point_color = "#2c3e50"
 )+ theme_tq()+
-    scale_x_continuous(labels = scales::dollar_format())
-
-recency_vs_monetary_plot %>% write_rds(paste0(screenshot_path,"recency_vs_monetary_plot.rds"))
+    scale_x_continuous(labels = scales::dollar_format())+
+    theme(axis.title = element_text(size = 8))
+    
+# recency_vs_monetary_plot %>% write_rds(paste0(screenshot_path,"recency_vs_monetary_plot.rds"))
 
 # Frequency vs Monetary Value
 frequency_vs_monetary_plot <- rfm_fm_plot(
     rfm_table = rfm_tbl,
     point_color = "#2c3e50"
 )+ theme_tq()+
-    scale_x_continuous(labels = scales::dollar_format())
+    scale_x_continuous(labels = scales::dollar_format())+
+    theme(axis.title = element_text(size = 8))
 
-frequency_vs_monetary_plot %>% write_rds(paste0(screenshot_path,"frequency_vs_monetary_plot.rds"))
+# frequency_vs_monetary_plot %>% write_rds(paste0(screenshot_path,"frequency_vs_monetary_plot.rds"))
 
 
 # Recency vs Frequency
@@ -233,8 +247,9 @@ recency_vs_frequency_plot <- rfm_rf_plot(
     rfm_table = rfm_tbl,
     point_color = "#2c3e50"
 )+ theme_tq()+
-    scale_x_continuous(labels = scales::comma_format())
+    scale_x_continuous(labels = scales::comma_format())+
+    theme(axis.title = element_text(size = 8))
 
-recency_vs_frequency_plot %>% write_rds(paste0(screenshot_path,"recency_vs_frequency_plot.rds"))
+# recency_vs_frequency_plot %>% write_rds(paste0(screenshot_path,"recency_vs_frequency_plot.rds"))
     
     
