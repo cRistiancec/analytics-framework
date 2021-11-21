@@ -2,7 +2,7 @@
 
 A short project using RFM concepts to understand and segment customers of a liquor vendor based on their buying patterns. 
 
-Detail write up available [here]()
+Detail write up available [here](https://lucasoblog.netlify.app/project/rfm-analysis-for-liquor-sales/)
 
 
 ## Approach
