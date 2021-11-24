@@ -11,6 +11,11 @@ library(janitor)
 library(lubridate)
 library(timetk)
 library(RabbitTidy)
+library(tidymodels)
+library(rules)
+library(modeltime)
+library(modeltime.ensemble)
+library(modeltime.resample)
 
 # * Load Data ----
 liquor_tbl_raw <- read_csv("Data/Iowa_Liquor_Sales.csv") %>% 
@@ -209,6 +214,112 @@ splits %>%
     tk_time_series_cv_plan() %>% 
     plot_time_series_cv_plan(date, gallons_sold)
 
-    
-    
+train_tbl <- training(splits)
+test_tbl  <- testing(splits)
 
+
+# RECIPE ----
+
+# * Clean Training Set ----
+
+# I skip this step as I will be modeling with outliers. Removing outliers requires more business
+# understanding. These outliers might be important for predictions.
+
+
+# * Recipe Specification ----
+recipe_spec <- recipe(gallons_sold ~., data = train_tbl) %>% 
+    update_role(row_id, new_role = "indicator") %>% 
+    step_timeseries_signature(date) %>% 
+    step_rm(matches("(.xts)|(.iso)|(hour)|(minute)|(second)|(am.pm)|(wday)|(mday)|(day)")) %>% 
+    step_normalize(date_index.num, date_year) %>% 
+    step_other(category) %>% 
+    step_dummy(all_nominal(), one_hot = TRUE)
+
+recipe_spec %>% prep() %>% juice() %>% glimpse()
+
+
+# MODELING ----
+
+# * Prophet ----
+wflw_fit_prophet <- workflow() %>% 
+    add_model(
+        spec = prophet_reg() %>% set_engine("prophet")
+    ) %>% 
+    add_recipe(recipe_spec) %>% 
+    fit(train_tbl)
+
+# * Xgboost ----
+wflw_fit_xgboost <- workflow() %>% 
+    add_model(
+        spec = boost_tree() %>% set_mode("regression") %>% set_engine("xgboost")
+    ) %>% 
+    add_recipe(recipe_spec %>% update_role(date, new_role = "indicator")) %>% 
+    fit(train_tbl)
+
+# * Prophet Boost ----
+wflw_fit_prophet_boost <- workflow() %>% 
+    add_model(
+        spec = prophet_boost(
+            seasonality_daily  = FALSE,
+            seasonality_weekly = FALSE,
+            seasonality_yearly = FALSE
+        ) %>% set_engine("prophet_xgboost")
+    ) %>% 
+    add_recipe(recipe_spec) %>% 
+    fit(train_tbl)
+
+# * SVM ----
+wflw_fit_svm_rfb <- workflow() %>% 
+    add_model(
+        spec = svm_rbf() %>% set_mode("regression") %>% set_engine("kernlab")
+    ) %>% 
+    add_recipe(recipe_spec %>% update_role(date, new_role = "indicator")) %>% 
+    fit(train_tbl)
+
+# * Random Forest ----
+wflw_fit_ranger <- workflow() %>% 
+    add_model(
+        spec = rand_forest() %>% set_mode("regression") %>% set_engine("ranger")
+    ) %>% 
+    add_recipe(recipe_spec %>% update_role(date, new_role = "indicator")) %>% 
+    fit(train_tbl)
+
+# * Neural Network ----
+wflw_fit_nnet <- workflow() %>% 
+    add_model(
+        spec = mlp() %>% set_mode("regression") %>% set_engine("nnet")
+    ) %>% 
+    add_recipe(recipe_spec %>% update_role(date, new_role = "indicator")) %>% 
+    fit(train_tbl)
+
+# * Neural Network ----
+wflw_fit_mars <- workflow() %>% 
+    add_model(
+        spec = mars() %>% set_mode("regression") %>% set_engine("earth")
+    ) %>% 
+    add_recipe(recipe_spec %>% update_role(date, new_role = "indicator")) %>% 
+    fit(train_tbl)
+
+# * Cubist Model ----
+wflw_fit_cubsist <- workflow() %>% 
+    add_model(
+        spec = cubist_rules("regression") %>% set_engine("Cubist")
+    ) %>% 
+    add_recipe(recipe_spec %>% update_role(date, new_role = "indicator")) %>% 
+    fit(train_tbl)
+
+# * Accuracy Check ----
+submodels_1_tbl <- modeltime_table(
+    wflw_fit_prophet,
+    wflw_fit_xgboost,
+    wflw_fit_prophet_boost, 
+    wflw_fit_svm_rfb,
+    wflw_fit_ranger,
+    wflw_fit_nnet,
+    wflw_fit_mars,
+    wflw_fit_cubsist
+)
+
+submodels_1_tbl %>% 
+    modeltime_accuracy(train_tbl) %>% 
+    arrange(rmse)
