@@ -16,6 +16,7 @@ library(rules)
 library(modeltime)
 library(modeltime.ensemble)
 library(modeltime.resample)
+library(tictoc)
 
 # * Load Data ----
 liquor_tbl_raw <- read_csv("Data/Iowa_Liquor_Sales.csv") %>% 
@@ -323,3 +324,245 @@ submodels_1_tbl <- modeltime_table(
 submodels_1_tbl %>% 
     modeltime_accuracy(train_tbl) %>% 
     arrange(rmse)
+
+
+# HYPER-PARAMETER TUNING ----
+
+# * Resamples - K-Fold ----
+set.seed(123)
+resamples_kfold <- train_tbl %>% vfold_cv(v = 5)
+
+resamples_kfold %>%
+    tk_time_series_cv_plan() %>% 
+    plot_time_series_cv_plan(date, gallons_sold, .facet_ncol = 2)
+
+# * Xgboost Tune ----
+
+# ** Spec ----
+model_spec_xgboost_tune <- boost_tree(
+    mode           = "regression",
+    mtry           = tune(),
+    trees          = tune(),
+    min_n          = tune(),
+    tree_depth     = tune(),
+    learn_rate     = tune(),
+    loss_reduction = tune()
+) %>% 
+    set_engine("xgboost")
+
+# ** Workflow ----
+wflw_spec_xgboost_tune <- workflow() %>% 
+    add_model(model_spec_xgboost_tune) %>% 
+    add_recipe(recipe_spec %>% update_role(date, new_role = "indicator"))
+
+# ** Tuning ----
+tic()
+set.seed(123)
+tune_results_xgboost <- wflw_spec_xgboost_tune %>% 
+    tune_grid(
+        resamples  = resamples_kfold,
+        param_info = parameters(wflw_spec_xgboost_tune) %>% 
+            update(learn_rate = learn_rate(c(0.001, 0.400), trans = NULL)),
+        grid       = 10,
+        control    = control_grid(verbose = TRUE, allow_par = TRUE)
+        
+)
+toc()
+
+# ** Results ----
+tune_results_xgboost %>% show_best("rmse", n = 5)
+
+# ** Finalize ----
+wflw_fit_xgboost_tuned <- wflw_spec_xgboost_tune %>% 
+    finalize_workflow(select_best(tune_results_xgboost, "rmse")) %>% 
+    fit(train_tbl)
+
+
+# * Ranger Tune ----
+# ** Spec ----
+model_spec_ranger_tune <- rand_forest(
+    mode           = "regression",
+    mtry           = tune(),
+    trees          = tune(),
+    min_n          = tune()
+) %>% 
+    set_engine("ranger")
+
+# ** Workflow ----
+wflw_spec_ranger_tune <- workflow() %>% 
+    add_model(model_spec_ranger_tune) %>% 
+    add_recipe(recipe_spec %>% update_role(date, new_role = "indicator"))
+
+# ** Tuning ----
+tic()
+set.seed(123)
+tune_results_ranger <- wflw_spec_ranger_tune %>% 
+    tune_grid(
+        resamples  = resamples_kfold,
+        grid       = 10,
+        control    = control_grid(verbose = TRUE, allow_par = TRUE)
+        
+)
+toc()
+
+# ** Results ----
+tune_results_ranger %>% show_best("rmse", n = 5)
+
+# ** Finalize ----
+wflw_fit_ranger_tuned <- wflw_spec_ranger_tune %>% 
+    finalize_workflow(select_best(tune_results_ranger, "rmse")) %>% 
+    fit(train_tbl)
+
+
+# SVM Tune ----
+
+# ** Spec ----
+model_spec_svm_rbf_tune <- svm_rbf(
+    mode      = "regression",
+    cost      = tune(),
+    rbf_sigma = tune(),
+    margin    = tune()
+) %>% 
+    set_engine("kernlab")
+
+# ** Workflow ----
+wflw_spec_svm_rbf_tune <- workflow() %>% 
+    add_model(model_spec_svm_rbf_tune) %>% 
+    add_recipe(recipe_spec %>% update_role(date, new_role = "indicator"))
+
+# ** Tuning ----
+tic()
+set.seed(123)
+tune_results_svm_rbf <- wflw_spec_svm_rbf_tune %>% 
+    tune_grid(
+        resamples = resamples_kfold,
+        grid      = 10,
+        control   = control_grid(verbose = TRUE, allow_par = TRUE)
+)
+toc()
+
+# ** Results ----
+tune_results_svm_rbf %>% show_best("rmse", n = 5)
+
+# ** Finalize ----
+wflw_fit_svm_rbf_tuned <- wflw_spec_svm_rbf_tune %>% 
+    finalize_workflow(select_best(tune_results_svm_rbf, "rmse")) %>% 
+    fit(train_tbl)
+
+
+# Cubist Tune ----
+
+# ** Spec ----
+model_spec_cubist_tuned <- cubist_rules(
+    mode = "regression",
+    committees = tune(),
+    neighbors = tune()
+) %>% 
+    set_engine("Cubist")
+
+# ** Workflow ----
+wflw_spec_cubist_tune <- workflow() %>% 
+    add_model(model_spec_cubist_tuned) %>% 
+    add_recipe(recipe_spec %>% update_role(date, new_role = "indicator"))
+
+# ** Tuning ----
+tic()
+set.seed(123)
+tune_results_cubist <- wflw_spec_cubist_tune %>% 
+    tune_grid(
+        resamples = resamples_kfold,
+        grid      = 10,
+        control   = control_grid(verbose = TRUE, allow_par = TRUE)
+    )
+toc()
+
+# ** Results ----
+tune_results_cubist %>% show_best("rmse", n = 5)
+
+# ** Finalize ----
+wflw_fit_cubist_tuned <- wflw_spec_cubist_tune %>% 
+    finalize_workflow(select_best(tune_results_cubist, "rmse")) %>% 
+    fit(train_tbl)
+
+
+# Earth Tune ----
+# ** Spec ----
+model_spec_earth_tuned <- mars(
+    mode        = "regression",
+    num_terms   = tune(),
+    prod_degree =  tune()
+) %>% 
+    set_engine("earth")
+
+# ** Workflow ----
+wflw_spec_earth_tune <- workflow() %>% 
+    add_model(model_spec_earth_tuned) %>% 
+    add_recipe(recipe_spec %>% update_role(date, new_role = "indicator"))
+
+# ** Tuning ----
+tic()
+set.seed(123)
+tune_results_earth <- wflw_spec_earth_tune %>% 
+    tune_grid(
+        resamples = resamples_kfold,
+        grid      = 10,
+        control   = control_grid(verbose = TRUE, allow_par = TRUE)
+    )
+toc()
+
+# ** Results ----
+tune_results_earth %>% show_best("rmse", n = 5)
+
+# ** Finalize ----
+wflw_fit_earth_tuned <- wflw_spec_earth_tune %>% 
+    finalize_workflow(select_best(tune_results_earth, "rmse")) %>% 
+    fit(train_tbl)
+
+
+# EVALUATE PANEL FORECASTS ----
+
+# * Modeltime Table ----
+submodels_2_tbl <- modeltime_table(
+    wflw_fit_xgboost_tuned,
+    wflw_fit_ranger_tuned,
+    wflw_fit_svm_rbf_tuned, 
+    wflw_fit_cubist_tuned,
+    wflw_fit_earth_tuned
+) %>% 
+    update_model_description(1, "XGBOOST-Tuned") %>% 
+    update_model_description(2, "RANGER-Tuned") %>% 
+    update_model_description(3, "KERNLAB-Tuned") %>% 
+    update_model_description(4, "CUBIST-Tuned") %>% 
+    update_model_description(5, "EARTH-Tuned") %>% 
+    combine_modeltime_tables(submodels_1_tbl)
+
+# * Calibration ----
+calibration_2_tbl <- submodels_2_tbl %>% 
+    modeltime_calibrate(test_tbl)
+
+# * Accuracy ----
+accuracy_2_tbl <- calibration_2_tbl %>% 
+    modeltime_accuracy() %>% 
+    arrange(rmse)
+
+# * Forecast Test Visualization ----
+calibration_2_tbl %>% 
+    modeltime_forecast(
+        new_data    = test_tbl,
+        actual_data = data_prepared_tbl,
+        keep_data   = TRUE
+    ) %>% 
+    group_by(category) %>% 
+    plot_modeltime_forecast(
+        .facet_ncol          = 2,
+        .conf_interval_alpha = 0.1,
+        .interactive         = TRUE
+    )
+
+test_tbl %>% 
+    group_by(category) %>% 
+    plot_time_series(date, gallons_sold, .facet_ncol = 2)
+
+    
+
+
