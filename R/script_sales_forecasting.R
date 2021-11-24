@@ -141,13 +141,13 @@ diageo_americas_weekly_tbl %>%
 
 
 
-# FEATURE ENGINEERING ----
+# DATA PREPARATION ----
 
 # * Group Transformations ----
 
-FORECAST_HORIZON <- 8
+FORECAST_HORIZON <- 12
 
-diageo_americas_weekly_tbl %>% 
+full_data_tbl <- diageo_americas_weekly_tbl %>% 
     select(date, category, gallons_sold) %>% 
     filter(date != as.Date("2017-10-29")) %>% 
     
@@ -162,9 +162,53 @@ diageo_americas_weekly_tbl %>%
     # Group-Wise Feature Transformations
     group_by(category) %>% 
     future_frame(date, .length_out = FORECAST_HORIZON, .bind_data = TRUE) %>% 
-    ungroup()
+    ungroup() %>% 
     
-    
+    # Lags & Rolling Features / Fourier Features
+    mutate(category = as_factor(category)) %>% 
+    group_by(category) %>% 
+    group_split() %>% 
+    map(.f = function(df){
+        df %>% 
+            arrange(date) %>% 
+            tk_augment_fourier(date, .periods = c(2, 4)) %>% 
+            tk_augment_lags(gallons_sold, .lags = FORECAST_HORIZON) %>% 
+            tk_augment_slidify(
+                gallons_sold_lag12, 
+                .f = ~ mean(.x, na.rm = TRUE),
+                .period  = c(8, 12, 21),
+                .partial = TRUE,
+                .align   = "center"
+            )
+        
+    }) %>% 
+    bind_rows() %>% 
+    rowid_to_column(var = "row_id")
+
+full_data_tbl %>% glimpse()    
+
+# * Data Prepared ----
+data_prepared_tbl <- full_data_tbl %>% 
+    filter(! is.na(gallons_sold)) %>% 
+    drop_na()
+
+data_prepared_tbl %>% View()
+
+# * Future Data ----
+future_tbl <- full_data_tbl %>% 
+    filter(is.na(gallons_sold))
+
+future_tbl %>% View()
+
+
+# TIME SPLIT ----
+splits <- data_prepared_tbl %>% 
+    time_series_split(date, assess = FORECAST_HORIZON, cumulative = TRUE)
+
+splits %>% 
+    tk_time_series_cv_plan() %>% 
+    plot_time_series_cv_plan(date, gallons_sold)
+
     
     
 
