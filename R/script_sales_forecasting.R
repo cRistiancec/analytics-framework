@@ -177,12 +177,12 @@ full_data_tbl <- diageo_americas_weekly_tbl %>%
     map(.f = function(df){
         df %>% 
             arrange(date) %>% 
-            tk_augment_fourier(date, .periods = c(2, 4)) %>% 
+            tk_augment_fourier(date, .periods = c(8, 14, 21)) %>% 
             tk_augment_lags(gallons_sold, .lags = FORECAST_HORIZON) %>% 
             tk_augment_slidify(
                 gallons_sold_lag12, 
                 .f = ~ mean(.x, na.rm = TRUE),
-                .period  = c(8, 12, 21),
+                .period  = c(8, 14, 21),
                 .partial = TRUE,
                 .align   = "center"
             )
@@ -559,10 +559,136 @@ calibration_2_tbl %>%
         .interactive         = TRUE
     )
 
-test_tbl %>% 
+
+# RESAMPLING ----
+# - Assess the stability of our models over time
+# - Helps us strategize an ensemble approach
+
+# * Time Series CV ----
+resamples_tscv <- train_tbl %>% 
+    time_series_cv(
+        assess      = FORECAST_HORIZON,
+        skip        = FORECAST_HORIZON,
+        cumulative  = TRUE,
+        slice_limit = 4
+    )
+
+resamples_tscv %>% 
+    tk_time_series_cv_plan() %>% 
+    plot_time_series_cv_plan(date, gallons_sold)
+
+# * Fitting Resamples ----
+model_tbl_tuned_resamples <- submodels_2_tbl %>% 
+    modeltime_fit_resamples(
+        resamples = resamples_tscv,
+        control   = control_resamples(verbose = TRUE, allow_par = TRUE) 
+    )
+
+# * Resampling Accuracy Table ----
+model_tbl_tuned_resamples %>% 
+    modeltime_resample_accuracy(
+        metric_set = metric_set(rmse),
+        summary_fns = list(mean = mean, sd = sd)
+    ) %>% 
+    arrange(rmse_mean)
+
+# * Resampling Accuracy Plot ----
+model_tbl_tuned_resamples %>% 
+    plot_modeltime_resamples(
+        .metric_set = metric_set(mae, rmse, rsq),
+        .point_size = 4,
+        .point_alpha = 0.8,
+        .facet_ncol = 1
+    )
+
+
+# ENSEMBLE MODELS ----
+
+# * Average Ensemble ----
+submodels_2_ids_to_keep <- c(10, 2)
+
+ensemble_fit <- submodels_2_tbl %>% 
+    filter(.model_id %in% submodels_2_ids_to_keep) %>% 
+    ensemble_average()
+
+model_ensemble_tbl <- modeltime_table(ensemble_fit)
+
+# * Accuracy ----
+model_ensemble_tbl %>% 
+    modeltime_accuracy(test_tbl)
+
+# * Forecast ----
+forecast_ensemble_test_tbl <- model_ensemble_tbl %>% 
+    modeltime_forecast(
+        new_data    = test_tbl,
+        actual_data = data_prepared_tbl,
+        keep_data   = TRUE
+    ) %>% 
+    mutate(across(.cols = c(.value, gallons_sold), .fns = exp))
+
+forecast_ensemble_test_tbl %>% 
     group_by(category) %>% 
-    plot_time_series(date, gallons_sold, .facet_ncol = 2)
+    plot_modeltime_forecast(.facet_ncol = 2, .conf_interval_alpha = 0.1)
 
+
+forecast_ensemble_test_tbl %>% 
+    filter(.key == "prediction") %>% 
+    select(category, .value, gallons_sold) %>% 
+    group_by(category) %>% 
+    summarize_accuracy_metrics(
+        truth      = gallons_sold,
+        estimate   = .value,
+        metric_set = metric_set(mae, rmse, rsq)
+    )
+
+
+# Refit ----
+model_ensemble_refit_tbl <- model_ensemble_tbl %>% 
+    modeltime_refit(data_prepared_tbl)
+
+model_ensemble_refit_tbl %>% 
+    modeltime_forecast(
+        new_data    = future_tbl,
+        actual_data = data_prepared_tbl,
+        keep_data = TRUE
+    ) %>% 
+    mutate(
+        .value = exp(.value),
+        gallons_sold = exp(gallons_sold)
+    ) %>% 
+    group_by(category) %>% 
+    plot_modeltime_forecast(
+        .facet_ncol = 2,
+        .y_intercept = 0,
+        .conf_interval_alpha = 0.1,
+        .legend_show = FALSE,
+        .interactive = FALSE
+    )
+
+# SAVING ARTIFACTS ----
+
+data_prepared_tbl
+
+feature_engineering_artifacts_list_1 <- list(
     
+    # Data
+    data = list(
+        data_prepared_tbl = data_prepared_tbl,
+        forecast_tbl      = future_tbl,
+        train_tbl         = train_tbl,
+        test_tbl          = test_tbl
+    ),
+    
+    # Recipes
+    recipes = list(recipe  = recipe_spec),
+    
+    # Model Tables
+    model_tables = list(
+        model_table       = submodels_2_tbl,
+        ensemble_table    = model_ensemble_tbl
+    )
+)
 
+feature_engineering_artifacts_list_1 %>% 
+    write_rds("Artifacts/feature_engineering_artifacts_list_1.rds")
 
