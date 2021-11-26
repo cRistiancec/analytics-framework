@@ -102,7 +102,7 @@ gallons_sold_by_day_plot <- gallons_sold_by_day %>%
     geom_text(aes(label = label_txt), hjust = -0.02, fontface = "bold", color = color, size = 3)+
     scale_x_continuous(labels = scales::comma_format(scale = 1e-3, accuracy = .1, suffix = "K"))+
     tidyquant::theme_tq()+
-    labs(title = "Gallons Sold by Day of Week", x = "gallons sold (Thousands)", y = NULL)+
+    labs(title = "Gallons Sold by Day of Week", x = "Gallons Sold (Thousands)", y = NULL)+
     theme(axis.title = element_text(size = 8))
     
 gallons_sold_by_day_plot %>% write_rds(paste0(screenshot_path,"gallons_sold_by_wday.rds"))
