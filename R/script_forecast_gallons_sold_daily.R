@@ -6,7 +6,6 @@
 # write_rds(paste0(screenshot_path,""))
 
 
-
 # 1.0: SETUP ----
 
 # * 1.1: Libraries ----
@@ -37,6 +36,30 @@ max(diageo_americas_tbl$date)
 color <- "#2c3e50"
 
 # * 2.1: Sales Trends ----
+
+# ** Gallons Sold by Category ----
+
+# * Sales by Categories ----
+sales_by_category_tbl <- diageo_americas_tbl %>% 
+    group_by(category) %>% 
+    summarise(gallons_sold = sum(volume_sold_gallons),
+              sale_dollars = sum(sale_dollars)) %>% 
+    arrange(desc(sale_dollars))
+
+sales_by_category_plot <- sales_by_category_tbl %>% 
+    mutate(pct = sale_dollars/sum(sale_dollars)) %>% 
+    mutate(label_txt_dollar = sale_dollars %>% scales::dollar()) %>% 
+    mutate(label_txt_pct = pct %>% scales::percent(accuracy = 1)) %>% 
+    mutate(category = category %>% fct_reorder(sale_dollars)) %>% 
+    ggplot(aes(sale_dollars, category))+
+    geom_col(fill = "#2c3e50")+
+    geom_text(aes(label = label_txt_pct), hjust = -0.02, fontface = "bold", color = color, size = 3)+
+    scale_x_continuous(labels = scales::dollar_format(scale = 1e-6, suffix = "M"))+
+    tidyquant::theme_tq()+
+    labs(title = "Liquor Sales by Category", x = "Sale Dollars (Millions)", y = NULL)+
+    theme(axis.title = element_text(size = 8)) 
+
+sales_by_category_plot %>% write_rds(paste0(screenshot_path,"sales_by_category.rds"))
 
 # ** Gallons Sold Trend ----
 gallons_sold_trend_plot <- diageo_americas_tbl %>% 
@@ -79,7 +102,7 @@ gallons_sold_by_day_plot <- gallons_sold_by_day %>%
     geom_text(aes(label = label_txt), hjust = -0.02, fontface = "bold", color = color, size = 3)+
     scale_x_continuous(labels = scales::comma_format(scale = 1e-3, accuracy = .1, suffix = "K"))+
     tidyquant::theme_tq()+
-    labs(title = "Gallons Sold by Day of Week", x = "gallons sold (thousands)", y = NULL)+
+    labs(title = "Gallons Sold by Day of Week", x = "gallons sold (Thousands)", y = NULL)+
     theme(axis.title = element_text(size = 8))
     
 gallons_sold_by_day_plot %>% write_rds(paste0(screenshot_path,"gallons_sold_by_wday.rds"))
