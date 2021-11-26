@@ -2,6 +2,8 @@
 
 # GOAL: Create 8 week forecast horizon by product category ----
 
+# screenshot_path <- "../LucasO-Blogdown/content/project/Forecasting-For-Liquor-Sales/Screenshots/"
+
 
 # SETUP ----
 
@@ -46,6 +48,8 @@ diageo_americas_tbl <- liquor_tbl_raw %>%
     )) %>% 
     mutate(sale_dollars = sale_dollars %>% str_remove_all("\\$")) %>% 
     mutate(sale_dollars = as.numeric(sale_dollars))
+
+diageo_americas_tbl %>% mutate(day = wday(date, label = T)) %>% count(day)
     
 diageo_americas_tbl %>% glimpse()
 
@@ -58,6 +62,11 @@ diageo_americas_tbl %>% rt_check_nulls()
 # * Save Forecasting Data ----
 # diageo_americas_tbl %>% write_rds("Artifacts/diageo_americas_data_forecasting.rds")
 
+diageo_americas_fcast_tbl %>% 
+    select(-category_name) %>% 
+    select(invoice_item_number, date, store_number, store_name, item_number, item_description,
+           category, everything())
+
 
 # EXPLORATORY DATA ANALYSIS ----
 
@@ -67,6 +76,24 @@ sales_by_category_tbl <- diageo_americas_tbl %>%
     summarise(gallons_sold = sum(volume_sold_gallons),
               sale_dollars = sum(sale_dollars)) %>% 
     arrange(desc(sale_dollars))
+
+sales_by_category_plot <- sales_by_category_tbl %>% 
+    mutate(pct = sale_dollars/sum(sale_dollars)) %>% 
+    mutate(label_txt_dollar = sale_dollars %>% scales::dollar()) %>% 
+    mutate(label_txt_pct = pct %>% scales::percent(accuracy = 1)) %>% 
+    mutate(category = category %>% fct_reorder(sale_dollars)) %>% 
+    ggplot(aes(sale_dollars, category))+
+    geom_col(fill = "#2c3e50")+
+    geom_label(aes(label = label_txt_pct), hjust = 0.5, fontface = "bold", nudge_x = -0.5,
+               fill = "white")+
+    scale_x_continuous(labels = scales::dollar_format())+
+    tidyquant::theme_tq()+
+    labs(title = "Liquor Sales by Category", x = "Sale Dollars", y = NULL)+
+    theme(axis.title = element_text(size = 8)) 
+
+sales_by_category_plot %>% write_rds(paste0(screenshot_path,"sales_by_category.rds"))
+    
+  
 
 # * Remove "Other" Category
 diageo_americas_fcast_tbl <- diageo_americas_tbl %>% 
