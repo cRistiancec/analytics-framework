@@ -1,12 +1,8 @@
-# RFM - Analysis
+# Building an Analytics Framework for Liquor Vendor
 
-A short project using RFM concepts to understand and segment customers of a liquor vendor based on their buying patterns. 
+This is a 3 part project where I build an analytics framework for a liquor vendor. In Part 1, I use RFM Analysis to segment customers and understand their purchasing habits. In Part 2 I create a forecast for the business using machine learning techniques. In Part 3 (yet to come), I will use machine learning to predict if a customer will make a purchase in the next coming days, and how much they will spend. 
 
-Detail write up available [here](https://lucasoblog.netlify.app/project/rfm-analysis-for-liquor-sales/)
-
-
-## Approach
-Performed RFM analysis for the largest vendor in the dataset (Diageo Americas), also utilizing the most recent 6 months. RFM scores were computed for each customer. Next, segments were assigned to customers based on their RFM score. Segments included Champions, Loyal Customers, Potential Loyalists, all the way to Lost customers. 
+Detail write up on Part 1 is available [here](https://lucasoblog.netlify.app/project/rfm-analysis-for-liquor-sales/), while detailed write up on Part 2 is available [here](https://lucasoblog.netlify.app/project/forecasting-for-liquor-sales/)
 
 ## Tools / Packages Used
 * R Programming Language
